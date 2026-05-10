@@ -1,4 +1,0 @@
-streamlit>=1.32
-openai-whisper>=20231117
-torch>=2.1
-pyannote.audio>=3.1
