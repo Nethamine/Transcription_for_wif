@@ -1,0 +1,6 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+streamlit>=1.32
+openai-whisper @ git+https://github.com/openai/whisper.git
+torch>=2.1
+pyannote.audio>=3.1
