@@ -1,25 +1,23 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Whisper transcription app — Python dependencies (targets Python 3.12)
+# Whisper transcription app — Python dependencies (target: Python 3.12)
 # ─────────────────────────────────────────────────────────────────────────────
-# Torch is pinned to the CPU-only build. This is the right choice for Streamlit
-# Community Cloud and any server WITHOUT an Nvidia GPU: smaller download, no CUDA
-# runtime needed, and it avoids the multi-GB CUDA wheel that can blow past a
-# cloud build's resource limit.
+# Torch is left UNPINNED on purpose. The CPU index below supplies "+cpu" wheels,
+# and pip prefers them automatically, so you get the lean CPU build that matches
+# whatever Python version is active — no version-not-found errors.
 #
-#   ▸ Have a CUDA GPU? Delete the --extra-index-url line below and the two
-#     "+cpu" suffixes so pip installs the GPU-enabled build instead.
+#   ▸ Have a CUDA GPU? Delete the --extra-index-url line so pip installs the
+#     GPU-enabled build from PyPI instead.
 # ─────────────────────────────────────────────────────────────────────────────
 --extra-index-url https://download.pytorch.org/whl/cpu
 
-torch==2.6.0+cpu
-torchaudio==2.6.0+cpu
+torch
+torchaudio
 
-streamlit==1.58.0
-openai-whisper==20250625
+streamlit
+openai-whisper
 
-# pyannote.audio 3.4.x (latest 3.x): matches the "speaker-diarization-3.1" model
-# and the token= auth API the app uses. Held below 4.x on purpose — 4.0 is an
-# API rewrite and would likely break merge_whisper_diarization() as written.
-pyannote.audio==3.4.0
+# Stay on pyannote 3.x — 4.0 is an API rewrite that would break
+# merge_whisper_diarization() and the token= auth call as written.
+pyannote.audio>=3.1,<4
 
-soundfile==0.13.1
+soundfile
