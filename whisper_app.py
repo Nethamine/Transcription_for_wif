@@ -1,17 +1,45 @@
 import os
 import ssl
 
-# Must be set BEFORE torch/whisper imports to bypass corporate/school SSL proxies
-os.environ["CURL_CA_BUNDLE"]     = ""
-os.environ["REQUESTS_CA_BUNDLE"] = ""
-os.environ["SSL_CERT_FILE"]      = ""
-ssl._create_default_https_context = ssl._create_unverified_context
+# Optional SSL-verification bypass for restrictive corporate/school proxies that
+# intercept HTTPS and break model downloads. OFF by default so the app behaves
+# normally and securely on every machine. Enable only if you actually need it:
+#   export WHISPER_DISABLE_SSL_VERIFY=1   (macOS/Linux)
+#   set WHISPER_DISABLE_SSL_VERIFY=1      (Windows)
+if os.environ.get("WHISPER_DISABLE_SSL_VERIFY", "").lower() in ("1", "true", "yes"):
+    os.environ["CURL_CA_BUNDLE"]     = ""
+    os.environ["REQUESTS_CA_BUNDLE"] = ""
+    os.environ["SSL_CERT_FILE"]      = ""
+    ssl._create_default_https_context = ssl._create_unverified_context
 
 import streamlit as st
 import whisper
 import tempfile
 import time
 import shutil
+
+# ── Compute device detection (cross-platform) ───────────────────────────────────
+def get_whisper_device() -> str:
+    """Best device for openai-whisper.
+
+    Whisper supports CUDA (Nvidia) and CPU. Apple's MPS backend is intentionally
+    skipped: several ops Whisper relies on aren't implemented for MPS and crash,
+    so CPU is the safe, working choice on Macs.
+    """
+    import torch
+    return "cuda" if torch.cuda.is_available() else "cpu"
+
+def get_diarization_device():
+    """Best device for pyannote.audio: CUDA > MPS > CPU.
+
+    Unlike Whisper, pyannote/torch run fine on Apple Silicon (MPS).
+    """
+    import torch
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
 
 # ── ffmpeg check ───────────────────────────────────────────────────────────────
 if not shutil.which("ffmpeg"):
@@ -114,6 +142,8 @@ with col_left:
     selected_label = st.selectbox("Model", list(MODEL_OPTIONS.keys()), index=1, label_visibility="collapsed")
     selected_model = MODEL_OPTIONS[selected_label]
     st.caption("Larger = more accurate but slower. Tiny/Base best for quick use.")
+    _dev = get_whisper_device()
+    st.caption(f"Transcription device: {'🟢 CUDA GPU' if _dev == 'cuda' else '⚪ CPU'}")
 
     st.divider()
 
@@ -213,21 +243,16 @@ with col_right:
 # ── Cached model loaders ───────────────────────────────────────────────────────
 @st.cache_resource(show_spinner=False)
 def load_whisper_model(model_name: str):
-    return whisper.load_model(model_name)
+    return whisper.load_model(model_name, device=get_whisper_device())
 
 @st.cache_resource(show_spinner=False)
 def load_diarization_pipeline(token: str):
-    import torch
     from pyannote.audio import Pipeline
     pipeline = Pipeline.from_pretrained(
         "pyannote/speaker-diarization-3.1",
         token=token,
     )
-    # Use MPS on Apple Silicon (M1/M2/M3/M4), CUDA on Nvidia, else CPU
-    if torch.backends.mps.is_available():
-        pipeline.to(torch.device("mps"))
-    elif torch.cuda.is_available():
-        pipeline.to(torch.device("cuda"))
+    pipeline.to(get_diarization_device())
     return pipeline
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -321,7 +346,8 @@ if transcribe_btn and uploaded_files:
                 status_placeholder.info(f"🔄 Transcribing file {file_idx + 1} of {len(uploaded_files)}: `{uploaded_file.name}`")
                 start_time = time.time()
 
-                transcribe_kwargs = {"verbose": False, "fp16": False}
+                # fp16 only accelerates on CUDA GPUs; CPU/MPS must use fp32.
+                transcribe_kwargs = {"verbose": False, "fp16": get_whisper_device() == "cuda"}
                 if selected_lang:
                     transcribe_kwargs["language"] = selected_lang
 
